@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+// toggle 0 or 1 to delay printing data - for debugging
+#define    DELAY_PRINT                1
 
 #define    MPU9250_ADDRESS            0x68
 #define    MAG_ADDRESS                0x0C
@@ -153,7 +155,7 @@ void loop() {
 
     Serial.print(my-70,DEC);
     Serial.print("\t");
-    
+
     Serial.print(mz-700,DEC);
     Serial.print("\t");
 
@@ -161,5 +163,7 @@ void loop() {
     Serial.println("");
     
     // Kevin's addition
-    delay(1000);
+    if (DELAY_PRINT) {
+      delay(1000);
+    }
 }
