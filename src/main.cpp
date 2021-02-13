@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+// Nicole and Melissa are cool
+
 // toggle 0 or 1 to delay printing data - for debugging
 #define    DELAY_PRINT                1
 
