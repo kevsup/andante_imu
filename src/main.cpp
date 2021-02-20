@@ -1,10 +1,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-// Nicole and Melissa are cool
-
-// toggle 0 or 1 to delay printing data - for debugging
-#define    DELAY_PRINT                1
+// only print every DELAY_PRINT number of cycles
+#define    DELAY_PRINT                1000 
 
 #define    MPU9250_ADDRESS            0x68
 #define    MAG_ADDRESS                0x0C
@@ -18,6 +16,33 @@
 #define    ACC_FULL_SCALE_4_G        0x08
 #define    ACC_FULL_SCALE_8_G        0x10
 #define    ACC_FULL_SCALE_16_G       0x18
+
+#define    GYRO_RANGE_ADDRESS        GYRO_FULL_SCALE_1000_DPS
+#define    ACC_RANGE_ADDRESS         ACC_FULL_SCALE_4_G
+
+// GYRO_RANGE is the number located before "DPS" for the address constant
+static const double GYRO_RANGE = 1000;
+// ACC_RANGE is the number of g's in the range (e.g. 4*g for ACC_FULL_SCALE_4_G)
+static const double ACC_RANGE = 4 * 9.81;
+static const int16_t MAX_INT16 = 0x7fff - 1;
+
+/* Bias of the gyro. This will depend on your device
+*  To find this, keep your IMU motionless and jot down what the "gx", "gy",
+*  and "gz" variables read. Then multiply that by -1
+*/
+static const int GX_BIAS = -51;
+static const int GY_BIAS = -29;
+static const int GZ_BIAS = -30;
+
+// blending weight for complementary filter
+static const double alpha = 0.5;
+
+// global variables
+static int printCounter = 0;
+static double thetaX = 0;
+static double thetaY = 0;
+static double thetaZ = 0;
+static long int tLast = 0;
 
 // This function read Nbytes bytes from I2C device at address Address. 
 // Put read bytes starting at register Register in the Data array. 
@@ -62,9 +87,9 @@ void setup() {
 
 
     // Configure gyroscope range
-    I2CwriteByte(MPU9250_ADDRESS,27,GYRO_FULL_SCALE_1000_DPS);
+    I2CwriteByte(MPU9250_ADDRESS,27,GYRO_RANGE_ADDRESS);
     // Configure accelerometers range
-    I2CwriteByte(MPU9250_ADDRESS,28,ACC_FULL_SCALE_4_G);
+    I2CwriteByte(MPU9250_ADDRESS,28,ACC_RANGE_ADDRESS);
     // Set by pass mode for the magnetometers
     I2CwriteByte(MPU9250_ADDRESS,0x37,0x02);
 
@@ -74,13 +99,20 @@ void setup() {
     // Store initial time
     ti = millis();
 
+    tLast = ti;
+
     Serial.println("MPU9250");
     delay(1000);
 }
 
 void loop() {
       // Display time
-    Serial.println (millis()-ti,DEC);
+    //Serial.println (millis()-ti,DEC);
+
+    long int tCurr = millis();
+    double dt = 1.0 * (tCurr - tLast) / 1000;   // seconds
+    if (printCounter > DELAY_PRINT) Serial.println(tCurr - tLast);
+    tLast = tCurr;
 
     // ____________________________________
     // :::  accelerometer and gyroscope :::
@@ -96,13 +128,46 @@ void loop() {
     int16_t ay = -(Buf[2]<<8 | Buf[3]);
     int16_t az = Buf[4]<<8 | Buf[5];
 
+    /*
+    double ax_metric = ax * ACC_RANGE / MAX_INT16;
+    double ay_metric = ay * ACC_RANGE / MAX_INT16;
+    double az_metric = az * ACC_RANGE / MAX_INT16;
+    */
+
     // Gyroscope
     int16_t gx = -(Buf[8]<<8 | Buf[9]);
     int16_t gy = -(Buf[10]<<8 | Buf[11]);
     int16_t gz = Buf[12]<<8 | Buf[13];
 
+    double gx_metric = (gx + GX_BIAS) * GYRO_RANGE / MAX_INT16;
+    double gy_metric = (gy + GY_BIAS) * GYRO_RANGE / MAX_INT16;
+    double gz_metric = (gz + GZ_BIAS) * GYRO_RANGE / MAX_INT16; 
+
+    thetaX += gx_metric * dt;
+    thetaY += gy_metric * dt;
+    thetaZ += gz_metric * dt;
+
     // Display values
 
+    if (printCounter > DELAY_PRINT) {
+      Serial.print("thetaX: ");
+      Serial.print(thetaX);
+      Serial.print ("\t");
+      Serial.print("thetaY: ");
+      Serial.print(thetaY);
+      Serial.print ("\t");
+      Serial.print("thetaZ: ");
+      Serial.print(thetaZ);
+      Serial.print ("\t");
+
+
+      Serial.println("");
+      printCounter = 0;
+    } else {
+      printCounter++;
+    }
+
+    /*
     // Accelerometer
     Serial.print("ax: ");
     Serial.print (ax,DEC);
@@ -132,7 +197,6 @@ void loop() {
     // :::  Magnetometer :::
 
     // Read register Status 1 and wait for the DRDY: Data Ready
-
     uint8_t ST1;
     do
     {
@@ -163,9 +227,6 @@ void loop() {
 
     // End of line
     Serial.println("");
-    
-    // Kevin's addition
-    if (DELAY_PRINT) {
-      delay(1000);
-    }
+
+    */
 }
