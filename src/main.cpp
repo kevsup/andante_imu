@@ -1,10 +1,13 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <math.h>
 
 // only print every DELAY_PRINT number of cycles
 #define    DELAY_PRINT                1000 
 
 #define    MPU9250_ADDRESS            0x68
+#define    MPU9250_ADDRESS_2          0x69    // for IMU #2
+
 #define    MAG_ADDRESS                0x0C
 
 #define    GYRO_FULL_SCALE_250_DPS    0x00
@@ -30,7 +33,7 @@ static const int16_t MAX_INT16 = 0x7fff - 1;
 *  To find this, keep your IMU motionless and jot down what the "gx", "gy",
 *  and "gz" variables read. Then multiply that by -1
 */
-static const int GX_BIAS = -51;
+static const int GX_BIAS = -52;
 static const int GY_BIAS = -29;
 static const int GZ_BIAS = -30;
 
@@ -39,9 +42,21 @@ static const double alpha = 0.5;
 
 // global variables
 static int printCounter = 0;
-static double thetaX = 0;
-static double thetaY = 0;
-static double thetaZ = 0;
+
+// thetas (from gyro integration, accelerometer, and fusion)
+static double th_x_gyro = 0;
+static double th_y_gyro = 0;
+static double th_z_gyro = 0;
+static double th_x_acc = 0;
+static double th_y_acc = 0;
+static double th_z_acc = 0;
+static double th_x_acc_init = 0;
+static double th_y_acc_init = 0;
+static double th_z_acc_init = 0;
+static double th_x = 0;
+static double th_y = 0;
+static double th_z = 0;
+static bool init_acc = false;
 static long int tLast = 0;
 
 // This function read Nbytes bytes from I2C device at address Address. 
@@ -106,12 +121,8 @@ void setup() {
 }
 
 void loop() {
-      // Display time
-    //Serial.println (millis()-ti,DEC);
-
     long int tCurr = millis();
     double dt = 1.0 * (tCurr - tLast) / 1000;   // seconds
-    if (printCounter > DELAY_PRINT) Serial.println(tCurr - tLast);
     tLast = tCurr;
 
     // ____________________________________
@@ -128,11 +139,26 @@ void loop() {
     int16_t ay = -(Buf[2]<<8 | Buf[3]);
     int16_t az = Buf[4]<<8 | Buf[5];
 
-    /*
     double ax_metric = ax * ACC_RANGE / MAX_INT16;
     double ay_metric = ay * ACC_RANGE / MAX_INT16;
     double az_metric = az * ACC_RANGE / MAX_INT16;
+
+    /* Note: one of these will be yaw, and that one will be garbage.
+    * Accelerometers cannot estimate yaw (yaw is rotation about the unit vector normal to earth's surface)
     */
+    th_x_acc = atan2(ay_metric, az_metric) * RAD_TO_DEG;
+    th_y_acc = atan2(az_metric, ax_metric) * RAD_TO_DEG;
+    th_z_acc = atan2(ax_metric, ay_metric) * RAD_TO_DEG;
+
+    if (!init_acc) {
+      th_x_acc_init = th_x_acc;
+      th_y_acc_init = th_y_acc;
+      th_z_acc_init = th_z_acc;
+      init_acc = true;
+    }
+    th_x_acc -= th_x_acc_init;
+    th_y_acc -= th_y_acc_init;
+    th_z_acc -= th_z_acc_init;
 
     // Gyroscope
     int16_t gx = -(Buf[8]<<8 | Buf[9]);
@@ -143,25 +169,52 @@ void loop() {
     double gy_metric = (gy + GY_BIAS) * GYRO_RANGE / MAX_INT16;
     double gz_metric = (gz + GZ_BIAS) * GYRO_RANGE / MAX_INT16; 
 
-    thetaX += gx_metric * dt;
-    thetaY += gy_metric * dt;
-    thetaZ += gz_metric * dt;
+    th_x_gyro += gx_metric * dt;
+    th_y_gyro += gy_metric * dt;
+    th_z_gyro += gz_metric * dt;
+
+    // Sensor fusion, assuming acceleration vector points in +z (i.e. th_z is yaw)
+    th_x = alpha * (th_x + gx_metric * dt) + (1 - alpha) * th_x_acc;
+    th_y = alpha * (th_y + gy_metric * dt) + (1 - alpha) * th_y_acc;
+    //th_z is yaw, so ignore here
+    //th_z = alpha * (th_z + gy_metric * dt) + (1 - alpha) * th_z_acc;    
 
     // Display values
 
     if (printCounter > DELAY_PRINT) {
-      Serial.print("thetaX: ");
-      Serial.print(thetaX);
+      Serial.print("th_x_gyro: ");
+      Serial.print(th_x_gyro);
       Serial.print ("\t");
-      Serial.print("thetaY: ");
-      Serial.print(thetaY);
+      Serial.print("th_y_gyro: ");
+      Serial.print(th_y_gyro);
       Serial.print ("\t");
-      Serial.print("thetaZ: ");
-      Serial.print(thetaZ);
+      Serial.print("th_z_gyro: ");
+      Serial.print(th_z_gyro);
+      Serial.print("\n");
+
+      Serial.print("th_x_acc: ");
+      Serial.print(th_x_acc);
       Serial.print ("\t");
+      Serial.print("th_y_acc: ");
+      Serial.print(th_y_acc);
+      Serial.print ("\t");
+      Serial.print("th_z_acc: ");
+      //Serial.print(th_z_acc);
+      Serial.print("yaw");
+      Serial.print("\n");
+
+      Serial.print("th_x fusion: ");
+      Serial.print(th_x);
+      Serial.print("\t");
+      Serial.print("th_y fusion: ");
+      Serial.print(th_y);
+      Serial.print("\t");
+      Serial.print("th_z fusion: ");
+      //Serial.print(th_z);
+      Serial.print("yaw");
 
 
-      Serial.println("");
+      Serial.println("\n");
       printCounter = 0;
     } else {
       printCounter++;
