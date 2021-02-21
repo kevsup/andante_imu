@@ -6,7 +6,7 @@
 #define    DELAY_PRINT                1000 
 
 #define    MPU9250_ADDRESS            0x68
-#define    MPU9250_ADDRESS_2          0x69    // for IMU #2
+#define    MPU9250_ADDRESS_2          0x69    // for IMU #2. Connect ADO pin to 3.3V
 
 #define    MAG_ADDRESS                0x0C
 
@@ -28,6 +28,7 @@ static const double GYRO_RANGE = 1000;
 // ACC_RANGE is the number of g's in the range (e.g. 4*g for ACC_FULL_SCALE_4_G)
 static const double ACC_RANGE = 4 * 9.81;
 static const int16_t MAX_INT16 = 0x7fff - 1;
+static const int INIT_CUTOFF = 5;   // used to initialize gyro theta
 
 /* Bias of the gyro. This will depend on your device
 *  To find this, keep your IMU motionless and jot down what the "gx", "gy",
@@ -50,13 +51,10 @@ static double th_z_gyro = 0;
 static double th_x_acc = 0;
 static double th_y_acc = 0;
 static double th_z_acc = 0;
-static double th_x_acc_init = 0;
-static double th_y_acc_init = 0;
-static double th_z_acc_init = 0;
 static double th_x = 0;
 static double th_y = 0;
 static double th_z = 0;
-static bool init_acc = false;
+static int init_counter = 0; // used to initialize gyro theta
 static long int tLast = 0;
 
 // This function read Nbytes bytes from I2C device at address Address. 
@@ -150,15 +148,18 @@ void loop() {
     th_y_acc = atan2(az_metric, ax_metric) * RAD_TO_DEG;
     th_z_acc = atan2(ax_metric, ay_metric) * RAD_TO_DEG;
 
-    if (!init_acc) {
-      th_x_acc_init = th_x_acc;
-      th_y_acc_init = th_y_acc;
-      th_z_acc_init = th_z_acc;
-      init_acc = true;
+    if (init_counter < INIT_CUTOFF) {
+      // use average of first INIT_CUTOFF accelerometer values to calibrate gyro theta
+      th_x_gyro += th_x_acc;
+      th_y_gyro += th_y_acc;
+      th_z_gyro += th_z_acc;
+      init_counter++;
+    } else if (init_counter == INIT_CUTOFF) {
+      th_x_gyro /= INIT_CUTOFF;
+      th_y_gyro /= INIT_CUTOFF;
+      th_z_gyro /= INIT_CUTOFF;
+      init_counter++;
     }
-    th_x_acc -= th_x_acc_init;
-    th_y_acc -= th_y_acc_init;
-    th_z_acc -= th_z_acc_init;
 
     // Gyroscope
     int16_t gx = -(Buf[8]<<8 | Buf[9]);
@@ -173,24 +174,25 @@ void loop() {
     th_y_gyro += gy_metric * dt;
     th_z_gyro += gz_metric * dt;
 
-    // Sensor fusion, assuming acceleration vector points in +z (i.e. th_z is yaw)
+    // Sensor fusion (one of these might be yaw, so that value will be garbage)
     th_x = alpha * (th_x + gx_metric * dt) + (1 - alpha) * th_x_acc;
     th_y = alpha * (th_y + gy_metric * dt) + (1 - alpha) * th_y_acc;
-    //th_z is yaw, so ignore here
-    //th_z = alpha * (th_z + gy_metric * dt) + (1 - alpha) * th_z_acc;    
+    th_z = alpha * (th_z + gy_metric * dt) + (1 - alpha) * th_z_acc;    
 
     // Display values
 
     if (printCounter > DELAY_PRINT) {
-      Serial.print("th_x_gyro: ");
-      Serial.print(th_x_gyro);
-      Serial.print ("\t");
-      Serial.print("th_y_gyro: ");
-      Serial.print(th_y_gyro);
-      Serial.print ("\t");
-      Serial.print("th_z_gyro: ");
-      Serial.print(th_z_gyro);
-      Serial.print("\n");
+      if (init_counter >= INIT_CUTOFF) {
+        Serial.print("th_x_gyro: ");
+        Serial.print(th_x_gyro);
+        Serial.print ("\t");
+        Serial.print("th_y_gyro: ");
+        Serial.print(th_y_gyro);
+        Serial.print ("\t");
+        Serial.print("th_z_gyro: ");
+        Serial.print(th_z_gyro);
+        Serial.print("\n");
+      }
 
       Serial.print("th_x_acc: ");
       Serial.print(th_x_acc);
