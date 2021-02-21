@@ -5,6 +5,7 @@
 #define    DELAY_PRINT                1000 
 
 #define    MPU9250_ADDRESS            0x68
+#define    MPU9250_ADDRESS_2          0x69 // for IMU #2, Melissa checking git functioning...
 #define    MAG_ADDRESS                0x0C
 
 #define    GYRO_FULL_SCALE_250_DPS    0x00
@@ -34,6 +35,11 @@ static const int GX_BIAS = -51;
 static const int GY_BIAS = -29;
 static const int GZ_BIAS = -30;
 
+// For IMU #2
+static const int GX_BIAS_2 = -51;
+static const int GY_BIAS_2 = -29;
+static const int GZ_BIAS_2 = -30;
+
 // blending weight for complementary filter
 static const double alpha = 0.5;
 
@@ -42,7 +48,13 @@ static int printCounter = 0;
 static double thetaX = 0;
 static double thetaY = 0;
 static double thetaZ = 0;
-static long int tLast = 0;
+static long int tLast = 0; 
+
+// For IMU #2
+static double thetaX_2 = 0;
+static double thetaY_2 = 0;
+static double thetaZ_2 = 0;
+
 
 // This function read Nbytes bytes from I2C device at address Address. 
 // Put read bytes starting at register Register in the Data array. 
@@ -85,6 +97,10 @@ void setup() {
     // Set gyroscope low pass filter at 5Hz
     I2CwriteByte(MPU9250_ADDRESS,26,0x06);
 
+    // Set accelerometers low pass filter at 5Hz * for IMU #2
+    I2CwriteByte(MPU9250_ADDRESS_2,29,0x06);
+    // Set gyroscope low pass filter at 5Hz
+    I2CwriteByte(MPU9250_ADDRESS_2,26,0x06);
 
     // Configure gyroscope range
     I2CwriteByte(MPU9250_ADDRESS,27,GYRO_RANGE_ADDRESS);
@@ -92,6 +108,13 @@ void setup() {
     I2CwriteByte(MPU9250_ADDRESS,28,ACC_RANGE_ADDRESS);
     // Set by pass mode for the magnetometers
     I2CwriteByte(MPU9250_ADDRESS,0x37,0x02);
+
+    // Configure gyroscope range * for IMU #2
+    I2CwriteByte(MPU9250_ADDRESS_2,27,GYRO_RANGE_ADDRESS);
+    // Configure accelerometers range
+    I2CwriteByte(MPU9250_ADDRESS_2,28,ACC_RANGE_ADDRESS);
+    // Set by pass mode for the magnetometers
+    I2CwriteByte(MPU9250_ADDRESS_2,0x37,0x02);
 
     // Request continuous magnetometer measurements in 16 bits
     I2CwriteByte(MAG_ADDRESS,0x0A,0x16);
@@ -101,7 +124,7 @@ void setup() {
 
     tLast = ti;
 
-    Serial.println("MPU9250");
+    Serial.println("MPU9250"); // Melissa's note: Not exactly sure how the printing order will be here...?
     delay(1000);
 }
 
@@ -121,12 +144,21 @@ void loop() {
     uint8_t Buf[14];
     I2Cread(MPU9250_ADDRESS,0x3B,14,Buf);
 
+  // Read accelerometer and gyroscope * IMU #2
+    uint8_t Buf_2[14];
+    I2Cread(MPU9250_ADDRESS_2,0x3B,14,Buf_2); // Melissa's note: think it's ok to keep middle two parameters the same
+
     // Create 16 bits values from 8 bits data
 
     // Accelerometer
     int16_t ax = -(Buf[0]<<8 | Buf[1]);
     int16_t ay = -(Buf[2]<<8 | Buf[3]);
     int16_t az = Buf[4]<<8 | Buf[5];
+
+    // Accelerometer #2
+    int16_t ax_2 = -(Buf_2[0]<<8 | Buf_2[1]);
+    int16_t ay_2 = -(Buf_2[2]<<8 | Buf_2[3]);
+    int16_t az_2 = Buf_2[4]<<8 | Buf_2[5];
 
     /*
     double ax_metric = ax * ACC_RANGE / MAX_INT16;
@@ -139,6 +171,13 @@ void loop() {
     int16_t gy = -(Buf[10]<<8 | Buf[11]);
     int16_t gz = Buf[12]<<8 | Buf[13];
 
+   // Gyroscope #2
+    int16_t gx_2 = -(Buf_2[8]<<8 | Buf_2[9]);
+    int16_t gy_2 = -(Buf_2[10]<<8 | Buf_2[11]);
+    int16_t gz_2 = Buf_2[12]<<8 | Buf_2[13];
+
+
+
     double gx_metric = (gx + GX_BIAS) * GYRO_RANGE / MAX_INT16;
     double gy_metric = (gy + GY_BIAS) * GYRO_RANGE / MAX_INT16;
     double gz_metric = (gz + GZ_BIAS) * GYRO_RANGE / MAX_INT16; 
@@ -147,17 +186,31 @@ void loop() {
     thetaY += gy_metric * dt;
     thetaZ += gz_metric * dt;
 
+  // For IMU #2
+    double gx_metric_2 = (gx_2 + GX_BIAS_2) * GYRO_RANGE / MAX_INT16;
+    double gy_metric_2 = (gy_2+ GY_BIAS_2) * GYRO_RANGE / MAX_INT16;
+    double gz_metric_2 = (gz_2 + GZ_BIAS_2) * GYRO_RANGE / MAX_INT16; 
+
+    thetaX_2 += gx_metric_2 * dt;
+    thetaY_2+= gy_metric_2 * dt;
+    thetaZ_2 += gz_metric_2 * dt;
+
+    double knee_angle_x = thetaX_2 - thetaX;
+    double knee_angle_y = thetaY_2 - thetaY;
+    double knee_angle_z = thetaZ_2 - thetaZ;
+
+
     // Display values
 
     if (printCounter > DELAY_PRINT) {
-      Serial.print("thetaX: ");
-      Serial.print(thetaX);
+      Serial.print("Knee Angle X: ");
+      Serial.print(knee_angle_x);
       Serial.print ("\t");
-      Serial.print("thetaY: ");
-      Serial.print(thetaY);
+      Serial.print("Knee Angle Y: ");
+      Serial.print(knee_angle_y);
       Serial.print ("\t");
-      Serial.print("thetaZ: ");
-      Serial.print(thetaZ);
+      Serial.print("Knee Angle Z: ");
+      Serial.print(knee_angle_z);
       Serial.print ("\t");
 
 
