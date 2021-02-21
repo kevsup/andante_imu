@@ -5,7 +5,7 @@
 #define    DELAY_PRINT                1000 
 
 #define    MPU9250_ADDRESS            0x68
-#define    MPU9250_ADDRESS_2          0x69 // for IMU #2, Melissa checking git functioning...
+#define    MPU9250_ADDRESS_2          0x69 // for IMU #2
 #define    MAG_ADDRESS                0x0C
 
 #define    GYRO_FULL_SCALE_250_DPS    0x00
@@ -124,7 +124,7 @@ void setup() {
 
     tLast = ti;
 
-    Serial.println("MPU9250"); // Melissa's note: Not exactly sure how the printing order will be here...?
+    Serial.println("MPU9250"); // Melissa's note: Not sure what will happen with printing here
     delay(1000);
 }
 
@@ -146,7 +146,7 @@ void loop() {
 
   // Read accelerometer and gyroscope * IMU #2
     uint8_t Buf_2[14];
-    I2Cread(MPU9250_ADDRESS_2,0x3B,14,Buf_2); // Melissa's note: think it's ok to keep middle two parameters the same
+    I2Cread(MPU9250_ADDRESS_2,0x3B,14,Buf_2); // Melissa's note: changed first and last parameter of this function for IMU #2
 
     // Create 16 bits values from 8 bits data
 
@@ -186,7 +186,7 @@ void loop() {
     thetaY += gy_metric * dt;
     thetaZ += gz_metric * dt;
 
-  // For IMU #2
+   // For IMU #2
     double gx_metric_2 = (gx_2 + GX_BIAS_2) * GYRO_RANGE / MAX_INT16;
     double gy_metric_2 = (gy_2+ GY_BIAS_2) * GYRO_RANGE / MAX_INT16;
     double gz_metric_2 = (gz_2 + GZ_BIAS_2) * GYRO_RANGE / MAX_INT16; 
@@ -195,6 +195,8 @@ void loop() {
     thetaY_2+= gy_metric_2 * dt;
     thetaZ_2 += gz_metric_2 * dt;
 
+
+    // For Knee Angle when 2 IMUs
     double knee_angle_x = thetaX_2 - thetaX;
     double knee_angle_y = thetaY_2 - thetaY;
     double knee_angle_z = thetaZ_2 - thetaZ;
