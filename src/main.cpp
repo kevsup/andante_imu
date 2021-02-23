@@ -5,7 +5,8 @@
 // only print every DELAY_PRINT number of cycles
 #define    DELAY_PRINT                1000 
 
-#define    NUM_IMU                    1
+// change this depending on number of IMUs
+#define    NUM_IMU                    2
 
 #define    MPU9250_ADDRESS            0x68
 #define    MPU9250_ADDRESS_2          0x69    // for IMU #2. Connect ADO pin to 3.3V
