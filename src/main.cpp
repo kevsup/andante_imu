@@ -30,10 +30,72 @@ static const double ACC_RANGE = 4 * 9.81;
 static const int16_t MAX_INT16 = 0x7fff - 1;
 static const int INIT_CUTOFF = 5;   // used to initialize gyro theta
 
+struct MPU9250 {
+  /* Bias of the gyro. This will depend on your device
+  *  To find this, keep your IMU motionless and jot down what the "gx", "gy",
+  *  and "gz" variables read. Then multiply that by -1
+  */
+  int GX_BIAS;
+  int GY_BIAS;
+  int GZ_BIAS;
+
+  // blending weight for complementary filter
+  double alpha;
+
+  // thetas (from gyro integration, accelerometer, and fusion)
+  double th_x_gyro;
+  double th_y_gyro;
+  double th_z_gyro;
+  double th_x_acc;
+  double th_y_acc;
+  double th_z_acc;
+  double th_x;
+  double th_y;
+  double th_z;
+
+  int init_counter; // used to initialize gyro theta
+};
+
+static struct MPU9250 imu1 = {
+  .GX_BIAS = -52,
+  .GY_BIAS = -29,
+  .GZ_BIAS = -30,
+  .alpha = 0.5,
+  .th_x_gyro = 0,
+  .th_y_gyro = 0,
+  .th_z_gyro = 0,
+  .th_x_acc = 0,
+  .th_y_acc = 0,
+  .th_z_acc = 0,
+  .th_x = 0,
+  .th_y = 0,
+  .th_z = 0,
+  .init_counter = 0
+};
+
+static struct MPU9250 imu2 = {
+  .GX_BIAS = -52,
+  .GY_BIAS = -29,
+  .GZ_BIAS = -30,
+  .alpha = 0.5,
+  .th_x_gyro = 0,
+  .th_y_gyro = 0,
+  .th_z_gyro = 0,
+  .th_x_acc = 0,
+  .th_y_acc = 0,
+  .th_z_acc = 0,
+  .th_x = 0,
+  .th_y = 0,
+  .th_z = 0,
+  .init_counter = 0
+};
+
 /* Bias of the gyro. This will depend on your device
 *  To find this, keep your IMU motionless and jot down what the "gx", "gy",
 *  and "gz" variables read. Then multiply that by -1
 */
+
+/*
 static const int GX_BIAS = -52;
 static const int GY_BIAS = -29;
 static const int GZ_BIAS = -30;
@@ -54,7 +116,9 @@ static double th_z_acc = 0;
 static double th_x = 0;
 static double th_y = 0;
 static double th_z = 0;
-static int init_counter = 0; // used to initialize gyro theta
+*/
+
+static int printCounter = 0;
 static long int tLast = 0;
 
 // This function read Nbytes bytes from I2C device at address Address. 
@@ -95,16 +159,21 @@ void setup() {
 
     // Set accelerometers low pass filter at 5Hz
     I2CwriteByte(MPU9250_ADDRESS,29,0x06);
+    I2CwriteByte(MPU9250_ADDRESS_2,29,0x06);
     // Set gyroscope low pass filter at 5Hz
     I2CwriteByte(MPU9250_ADDRESS,26,0x06);
+    I2CwriteByte(MPU9250_ADDRESS_2,26,0x06);
 
 
     // Configure gyroscope range
     I2CwriteByte(MPU9250_ADDRESS,27,GYRO_RANGE_ADDRESS);
+    I2CwriteByte(MPU9250_ADDRESS_2,27,GYRO_RANGE_ADDRESS);
     // Configure accelerometers range
     I2CwriteByte(MPU9250_ADDRESS,28,ACC_RANGE_ADDRESS);
+    I2CwriteByte(MPU9250_ADDRESS_2,28,ACC_RANGE_ADDRESS);
     // Set by pass mode for the magnetometers
     I2CwriteByte(MPU9250_ADDRESS,0x37,0x02);
+    I2CwriteByte(MPU9250_ADDRESS_2,0x37,0x02);
 
     // Request continuous magnetometer measurements in 16 bits
     I2CwriteByte(MAG_ADDRESS,0x0A,0x16);
@@ -118,109 +187,148 @@ void setup() {
     delay(1000);
 }
 
+static void populateData(MPU9250 &imu, uint8_t Address, double dt) {
+  // ____________________________________
+  // :::  accelerometer and gyroscope :::
+
+  // Read accelerometer and gyroscope
+  uint8_t Buf[14];
+  I2Cread(Address,0x3B,14,Buf);
+
+  // Create 16 bits values from 8 bits data
+
+  // Accelerometer
+  int16_t ax = -(Buf[0]<<8 | Buf[1]);
+  int16_t ay = -(Buf[2]<<8 | Buf[3]);
+  int16_t az = Buf[4]<<8 | Buf[5];
+
+  double ax_metric = ax * ACC_RANGE / MAX_INT16;
+  double ay_metric = ay * ACC_RANGE / MAX_INT16;
+  double az_metric = az * ACC_RANGE / MAX_INT16;
+
+  /* Note: one of these will be yaw, and that one will be garbage.
+  * Accelerometers cannot estimate yaw (yaw is rotation about the unit vector normal to earth's surface)
+  */
+  imu.th_x_acc = atan2(ay_metric, az_metric) * RAD_TO_DEG;
+  imu.th_y_acc = atan2(az_metric, ax_metric) * RAD_TO_DEG;
+  imu.th_z_acc = atan2(ax_metric, ay_metric) * RAD_TO_DEG;
+
+  if (imu.init_counter < INIT_CUTOFF) {
+    // use average of first INIT_CUTOFF accelerometer values to calibrate gyro theta
+    imu.th_x_gyro += imu.th_x_acc;
+    imu.th_y_gyro += imu.th_y_acc;
+    imu.th_z_gyro += imu.th_z_acc;
+    imu.init_counter++;
+  } else if (imu.init_counter == INIT_CUTOFF) {
+    imu.th_x_gyro /= INIT_CUTOFF;
+    imu.th_y_gyro /= INIT_CUTOFF;
+    imu.th_z_gyro /= INIT_CUTOFF;
+    imu.init_counter++;
+  }
+
+  // Gyroscope
+  int16_t gx = -(Buf[8]<<8 | Buf[9]);
+  int16_t gy = -(Buf[10]<<8 | Buf[11]);
+  int16_t gz = Buf[12]<<8 | Buf[13];
+
+  double gx_metric = (gx + imu.GX_BIAS) * GYRO_RANGE / MAX_INT16;
+  double gy_metric = (gy + imu.GY_BIAS) * GYRO_RANGE / MAX_INT16;
+  double gz_metric = (gz + imu.GZ_BIAS) * GYRO_RANGE / MAX_INT16; 
+
+  imu.th_x_gyro += gx_metric * dt;
+  imu.th_y_gyro += gy_metric * dt;
+  imu.th_z_gyro += gz_metric * dt;
+
+  // Sensor fusion (one of these might be yaw, so that value will be garbage)
+  imu.th_x = imu.alpha * (imu.th_x + gx_metric * dt) + (1 - imu.alpha) * imu.th_x_acc;
+  imu.th_y = imu.alpha * (imu.th_y + gy_metric * dt) + (1 - imu.alpha) * imu.th_y_acc;
+  imu.th_z = imu.alpha * (imu.th_z + gy_metric * dt) + (1 - imu.alpha) * imu.th_z_acc;    
+}
+
+static bool printData(MPU9250 &imu) {
+  if (printCounter > DELAY_PRINT) {
+    if (imu.init_counter >= INIT_CUTOFF) {
+      Serial.print("th_x_gyro: ");
+      Serial.print(imu.th_x_gyro);
+      Serial.print ("\t");
+      Serial.print("th_y_gyro: ");
+      Serial.print(imu.th_y_gyro);
+      Serial.print ("\t");
+      Serial.print("th_z_gyro: ");
+      Serial.print(imu.th_z_gyro);
+      Serial.print("\n");
+    }
+
+    Serial.print("th_x_acc: ");
+    Serial.print(imu.th_x_acc);
+    Serial.print ("\t");
+    Serial.print("th_y_acc: ");
+    Serial.print(imu.th_y_acc);
+    Serial.print ("\t");
+    Serial.print("th_z_acc: ");
+    //Serial.print(imu.th_z_acc);
+    Serial.print("yaw");
+    Serial.print("\n");
+
+    Serial.print("th_x fusion: ");
+    Serial.print(imu.th_x);
+    Serial.print("\t");
+    Serial.print("th_y fusion: ");
+    Serial.print(imu.th_y);
+    Serial.print("\t");
+    Serial.print("th_z fusion: ");
+    //Serial.print(imu.th_z);
+    Serial.print("yaw");
+
+    Serial.println("\n");
+    return true;
+  } 
+  return false;
+}
+
+static bool printKneeAngle() {
+  if (printCounter > DELAY_PRINT) {
+    double knee_x = imu2.th_x - imu1.th_x;
+    double knee_y = imu2.th_y - imu1.th_y;
+    double knee_z = imu2.th_z - imu1.th_z; 
+
+    Serial.print("Knee Angle X: ");
+    Serial.print(knee_x);
+    Serial.print("\t");
+    Serial.print("Knee Angle Y: ");
+    Serial.print(knee_y);
+    Serial.print("\t");
+    Serial.print("Knee Angle Z: ");
+    Serial.print(knee_z);
+    Serial.print("\n");
+    return true;
+  } 
+  return false;
+}
+
 void loop() {
     long int tCurr = millis();
     double dt = 1.0 * (tCurr - tLast) / 1000;   // seconds
     tLast = tCurr;
 
-    // ____________________________________
-    // :::  accelerometer and gyroscope :::
+    populateData(imu1, MPU9250_ADDRESS, dt);
+    populateData(imu2, MPU9250_ADDRESS_2, dt);
 
-    // Read accelerometer and gyroscope
-    uint8_t Buf[14];
-    I2Cread(MPU9250_ADDRESS,0x3B,14,Buf);
-
-    // Create 16 bits values from 8 bits data
-
-    // Accelerometer
-    int16_t ax = -(Buf[0]<<8 | Buf[1]);
-    int16_t ay = -(Buf[2]<<8 | Buf[3]);
-    int16_t az = Buf[4]<<8 | Buf[5];
-
-    double ax_metric = ax * ACC_RANGE / MAX_INT16;
-    double ay_metric = ay * ACC_RANGE / MAX_INT16;
-    double az_metric = az * ACC_RANGE / MAX_INT16;
-
-    /* Note: one of these will be yaw, and that one will be garbage.
-    * Accelerometers cannot estimate yaw (yaw is rotation about the unit vector normal to earth's surface)
-    */
-    th_x_acc = atan2(ay_metric, az_metric) * RAD_TO_DEG;
-    th_y_acc = atan2(az_metric, ax_metric) * RAD_TO_DEG;
-    th_z_acc = atan2(ax_metric, ay_metric) * RAD_TO_DEG;
-
-    if (init_counter < INIT_CUTOFF) {
-      // use average of first INIT_CUTOFF accelerometer values to calibrate gyro theta
-      th_x_gyro += th_x_acc;
-      th_y_gyro += th_y_acc;
-      th_z_gyro += th_z_acc;
-      init_counter++;
-    } else if (init_counter == INIT_CUTOFF) {
-      th_x_gyro /= INIT_CUTOFF;
-      th_y_gyro /= INIT_CUTOFF;
-      th_z_gyro /= INIT_CUTOFF;
-      init_counter++;
-    }
-
-    // Gyroscope
-    int16_t gx = -(Buf[8]<<8 | Buf[9]);
-    int16_t gy = -(Buf[10]<<8 | Buf[11]);
-    int16_t gz = Buf[12]<<8 | Buf[13];
-
-    double gx_metric = (gx + GX_BIAS) * GYRO_RANGE / MAX_INT16;
-    double gy_metric = (gy + GY_BIAS) * GYRO_RANGE / MAX_INT16;
-    double gz_metric = (gz + GZ_BIAS) * GYRO_RANGE / MAX_INT16; 
-
-    th_x_gyro += gx_metric * dt;
-    th_y_gyro += gy_metric * dt;
-    th_z_gyro += gz_metric * dt;
-
-    // Sensor fusion (one of these might be yaw, so that value will be garbage)
-    th_x = alpha * (th_x + gx_metric * dt) + (1 - alpha) * th_x_acc;
-    th_y = alpha * (th_y + gy_metric * dt) + (1 - alpha) * th_y_acc;
-    th_z = alpha * (th_z + gy_metric * dt) + (1 - alpha) * th_z_acc;    
-
-    // Display values
-
-    if (printCounter > DELAY_PRINT) {
-      if (init_counter >= INIT_CUTOFF) {
-        Serial.print("th_x_gyro: ");
-        Serial.print(th_x_gyro);
-        Serial.print ("\t");
-        Serial.print("th_y_gyro: ");
-        Serial.print(th_y_gyro);
-        Serial.print ("\t");
-        Serial.print("th_z_gyro: ");
-        Serial.print(th_z_gyro);
-        Serial.print("\n");
-      }
-
-      Serial.print("th_x_acc: ");
-      Serial.print(th_x_acc);
-      Serial.print ("\t");
-      Serial.print("th_y_acc: ");
-      Serial.print(th_y_acc);
-      Serial.print ("\t");
-      Serial.print("th_z_acc: ");
-      //Serial.print(th_z_acc);
-      Serial.print("yaw");
-      Serial.print("\n");
-
-      Serial.print("th_x fusion: ");
-      Serial.print(th_x);
-      Serial.print("\t");
-      Serial.print("th_y fusion: ");
-      Serial.print(th_y);
-      Serial.print("\t");
-      Serial.print("th_z fusion: ");
-      //Serial.print(th_z);
-      Serial.print("yaw");
-
-
-      Serial.println("\n");
+    // Print knee angle
+    if (printKneeAngle()) {
       printCounter = 0;
     } else {
       printCounter++;
     }
+
+    // Print individual angles
+    /*
+    if (printData(imu1) && printData(imu2)) {
+      printCounter = 0;
+    } else {
+      printCounter++;
+    }
+    */
 
     /*
     // Accelerometer
