@@ -5,6 +5,8 @@
 // only print every DELAY_PRINT number of cycles
 #define    DELAY_PRINT                1000 
 
+#define    NUM_IMU                    1
+
 #define    MPU9250_ADDRESS            0x68
 #define    MPU9250_ADDRESS_2          0x69    // for IMU #2. Connect ADO pin to 3.3V
 
@@ -90,34 +92,6 @@ static struct MPU9250 imu2 = {
   .init_counter = 0
 };
 
-/* Bias of the gyro. This will depend on your device
-*  To find this, keep your IMU motionless and jot down what the "gx", "gy",
-*  and "gz" variables read. Then multiply that by -1
-*/
-
-/*
-static const int GX_BIAS = -52;
-static const int GY_BIAS = -29;
-static const int GZ_BIAS = -30;
-
-// blending weight for complementary filter
-static const double alpha = 0.5;
-
-// global variables
-static int printCounter = 0;
-
-// thetas (from gyro integration, accelerometer, and fusion)
-static double th_x_gyro = 0;
-static double th_y_gyro = 0;
-static double th_z_gyro = 0;
-static double th_x_acc = 0;
-static double th_y_acc = 0;
-static double th_z_acc = 0;
-static double th_x = 0;
-static double th_y = 0;
-static double th_z = 0;
-*/
-
 static int printCounter = 0;
 static long int tLast = 0;
 
@@ -159,21 +133,22 @@ void setup() {
 
     // Set accelerometers low pass filter at 5Hz
     I2CwriteByte(MPU9250_ADDRESS,29,0x06);
-    I2CwriteByte(MPU9250_ADDRESS_2,29,0x06);
     // Set gyroscope low pass filter at 5Hz
     I2CwriteByte(MPU9250_ADDRESS,26,0x06);
-    I2CwriteByte(MPU9250_ADDRESS_2,26,0x06);
-
-
     // Configure gyroscope range
     I2CwriteByte(MPU9250_ADDRESS,27,GYRO_RANGE_ADDRESS);
-    I2CwriteByte(MPU9250_ADDRESS_2,27,GYRO_RANGE_ADDRESS);
     // Configure accelerometers range
     I2CwriteByte(MPU9250_ADDRESS,28,ACC_RANGE_ADDRESS);
-    I2CwriteByte(MPU9250_ADDRESS_2,28,ACC_RANGE_ADDRESS);
     // Set by pass mode for the magnetometers
     I2CwriteByte(MPU9250_ADDRESS,0x37,0x02);
-    I2CwriteByte(MPU9250_ADDRESS_2,0x37,0x02);
+
+    if (NUM_IMU == 2) {
+      I2CwriteByte(MPU9250_ADDRESS_2,29,0x06);
+      I2CwriteByte(MPU9250_ADDRESS_2,26,0x06);
+      I2CwriteByte(MPU9250_ADDRESS_2,27,GYRO_RANGE_ADDRESS);
+      I2CwriteByte(MPU9250_ADDRESS_2,28,ACC_RANGE_ADDRESS);
+      I2CwriteByte(MPU9250_ADDRESS_2,0x37,0x02);
+    }
 
     // Request continuous magnetometer measurements in 16 bits
     I2CwriteByte(MAG_ADDRESS,0x0A,0x16);
@@ -312,23 +287,23 @@ void loop() {
     tLast = tCurr;
 
     populateData(imu1, MPU9250_ADDRESS, dt);
-    populateData(imu2, MPU9250_ADDRESS_2, dt);
+    if (NUM_IMU == 2) {
+      populateData(imu2, MPU9250_ADDRESS_2, dt);
 
-    // Print knee angle
-    if (printKneeAngle()) {
-      printCounter = 0;
-    } else {
-      printCounter++;
+      // print knee angle
+      if (printKneeAngle()) {
+        printCounter = 0;
+      } else {
+        printCounter++;
+      }
+    } else if (NUM_IMU == 1) {
+      // print angle for single IMU
+      if (printData(imu1)) {
+        printCounter = 0;
+      } else {
+        printCounter++;
+      }
     }
-
-    // Print individual angles
-    /*
-    if (printData(imu1) && printData(imu2)) {
-      printCounter = 0;
-    } else {
-      printCounter++;
-    }
-    */
 
     /*
     // Accelerometer
