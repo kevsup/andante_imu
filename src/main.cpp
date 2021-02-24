@@ -3,7 +3,7 @@
 #include <math.h>
 
 // only print every DELAY_PRINT number of cycles
-#define    DELAY_PRINT                1000 
+#define    DELAY_PRINT                300 
 
 // change this depending on number of IMUs
 #define    NUM_IMU                    2
@@ -60,9 +60,9 @@ struct MPU9250 {
 };
 
 static struct MPU9250 imu1 = {
-  .GX_BIAS = -52,
-  .GY_BIAS = -29,
-  .GZ_BIAS = -30,
+  .GX_BIAS = -27,
+  .GY_BIAS = 33,
+  .GZ_BIAS = 26,
   .alpha = 0.5,
   .th_x_gyro = 0,
   .th_y_gyro = 0,
@@ -264,9 +264,9 @@ static bool printData(MPU9250 &imu) {
 
 static bool printKneeAngle() {
   if (printCounter > DELAY_PRINT) {
-    double knee_x = imu2.th_x - imu1.th_x;
-    double knee_y = imu2.th_y - imu1.th_y;
-    double knee_z = imu2.th_z - imu1.th_z; 
+    double knee_x = abs(imu2.th_x - imu1.th_x);
+    double knee_y = abs(imu2.th_y - imu1.th_y);
+    double knee_z = abs(imu2.th_z - imu1.th_z); 
 
     Serial.print("Knee Angle X: ");
     Serial.print(knee_x);
