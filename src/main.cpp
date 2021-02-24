@@ -23,8 +23,8 @@
 #define    ACC_FULL_SCALE_8_G        0x10
 #define    ACC_FULL_SCALE_16_G       0x18
 
-#define    GYRO_RANGE_ADDRESS        GYRO_FULL_SCALE_1000_DPS
-#define    ACC_RANGE_ADDRESS         ACC_FULL_SCALE_4_G
+#define    GYRO_RANGE_INIT        GYRO_FULL_SCALE_1000_DPS
+#define    ACC_RANGE_INIT         ACC_FULL_SCALE_4_G
 
 // GYRO_RANGE is the number located before "DPS" for the address constant
 static const double GYRO_RANGE = 1000;
@@ -137,17 +137,17 @@ void setup() {
     // Set gyroscope low pass filter at 5Hz
     I2CwriteByte(MPU9250_ADDRESS,26,0x06);
     // Configure gyroscope range
-    I2CwriteByte(MPU9250_ADDRESS,27,GYRO_RANGE_ADDRESS);
+    I2CwriteByte(MPU9250_ADDRESS,27,GYRO_RANGE_INIT);
     // Configure accelerometers range
-    I2CwriteByte(MPU9250_ADDRESS,28,ACC_RANGE_ADDRESS);
+    I2CwriteByte(MPU9250_ADDRESS,28,ACC_RANGE_INIT);
     // Set by pass mode for the magnetometers
     I2CwriteByte(MPU9250_ADDRESS,0x37,0x02);
 
     if (NUM_IMU == 2) {
       I2CwriteByte(MPU9250_ADDRESS_2,29,0x06);
       I2CwriteByte(MPU9250_ADDRESS_2,26,0x06);
-      I2CwriteByte(MPU9250_ADDRESS_2,27,GYRO_RANGE_ADDRESS);
-      I2CwriteByte(MPU9250_ADDRESS_2,28,ACC_RANGE_ADDRESS);
+      I2CwriteByte(MPU9250_ADDRESS_2,27,GYRO_RANGE_INIT);
+      I2CwriteByte(MPU9250_ADDRESS_2,28,ACC_RANGE_INIT);
       I2CwriteByte(MPU9250_ADDRESS_2,0x37,0x02);
     }
 
@@ -242,8 +242,8 @@ static bool printData(MPU9250 &imu) {
     Serial.print(imu.th_y_acc);
     Serial.print ("\t");
     Serial.print("th_z_acc: ");
-    //Serial.print(imu.th_z_acc);
-    Serial.print("yaw");
+    Serial.print(imu.th_z_acc);
+    //Serial.print("yaw");
     Serial.print("\n");
 
     Serial.print("th_x fusion: ");
@@ -253,8 +253,8 @@ static bool printData(MPU9250 &imu) {
     Serial.print(imu.th_y);
     Serial.print("\t");
     Serial.print("th_z fusion: ");
-    //Serial.print(imu.th_z);
-    Serial.print("yaw");
+    Serial.print(imu.th_z);
+    //Serial.print("yaw");
 
     Serial.println("\n");
     return true;
@@ -264,9 +264,9 @@ static bool printData(MPU9250 &imu) {
 
 static bool printKneeAngle() {
   if (printCounter > DELAY_PRINT) {
-    double knee_x = abs(imu2.th_x - imu1.th_x);
-    double knee_y = abs(imu2.th_y - imu1.th_y);
-    double knee_z = abs(imu2.th_z - imu1.th_z); 
+    double knee_x = imu2.th_x - imu1.th_x;
+    double knee_y = imu2.th_y - imu1.th_y;
+    double knee_z = imu2.th_z - imu1.th_z;
 
     Serial.print("Knee Angle X: ");
     Serial.print(knee_x);
