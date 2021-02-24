@@ -2,7 +2,7 @@ import processing.serial.*;
 import processing.sound.*;
 
 Serial myPort;        // The serial port
-int serialNumber = 1;
+int serialNumber = 3;
 
 SoundFile[] file = new SoundFile[8];
 boolean[] playing = new boolean[8];
@@ -10,12 +10,14 @@ boolean[] playing = new boolean[8];
 int currNote;
 
 void setup () {
-  
-  /*
-  file[0] = new SoundFile(this, "C.wav");
-  file[1] = new SoundFile(this, "D.wav");
-  file[2] = new SoundFile(this, "E.wav");
-  */
+  file[0] = new SoundFile(this, "C3.wav");
+  file[1] = new SoundFile(this, "D3.wav");
+  file[2] = new SoundFile(this, "E3.wav");
+  file[3] = new SoundFile(this, "F3.wav");
+  file[4] = new SoundFile(this, "G3.wav");
+  file[5] = new SoundFile(this, "A3.wav");
+  file[6] = new SoundFile(this, "B3.wav");
+  file[7] = new SoundFile(this, "C4.wav");
   
   // set the window size:
   size(600, 400);        
@@ -50,12 +52,13 @@ void serialEvent (Serial myPort) {
     float kneeAngle = float(inString);
     if (kneeAngle < 0) {
        kneeAngle = 0; 
+    } else if (kneeAngle > 90) {
+       kneeAngle = 90; 
     }
     int numNotes = file.length;
-    float note = map(kneeAngle, 180.0, 0.0, 0.0, numNotes + 1);
+    float note = map(kneeAngle, 90.0, 0.0, 0.0, numNotes - 0.1);
     int index = int(note);
     println(index);
-    /*
     if (!playing[index]) {
       file[currNote].stop(); 
       file[index].play(); 
@@ -63,6 +66,5 @@ void serialEvent (Serial myPort) {
       playing[index] = true;
       currNote = index;
     }
-    */
   }
 }
