@@ -282,6 +282,11 @@ static bool printKneeAngle() {
   return false;
 }
 
+static void printKneeX() {
+  double knee_x = imu2.th_x - imu1.th_x;
+  Serial.println(knee_x);
+}
+
 void loop() {
     long int tCurr = millis();
     double dt = 1.0 * (tCurr - tLast) / 1000;   // seconds
@@ -292,11 +297,14 @@ void loop() {
       populateData(imu2, MPU9250_ADDRESS_2, dt);
 
       // print knee angle
+      printKneeX();
+      /*
       if (printKneeAngle()) {
         printCounter = 0;
       } else {
         printCounter++;
       }
+      */
     } else if (NUM_IMU == 1) {
       // print angle for single IMU
       if (printData(imu1)) {
