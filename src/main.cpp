@@ -6,7 +6,6 @@
 #define    DELAY_PRINT                1000 
 
 #define    MPU9250_ADDRESS            0x68
-#define    MPU9250_ADDRESS_2          0x69    // for IMU #2
 
 #define    MAG_ADDRESS                0x0C
 
