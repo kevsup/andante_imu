@@ -1,6 +1,31 @@
+/* This is a hacky solution for reading two MPU9250 on an Adafruit nRF52 Feather.
+* Typically on an Arduino Uno, we would just connect both IMU to the SCL/SDA pins, and
+* change one of the IMU addresses to 0x69 (pull ADO pin high), but this does not work
+* on nRF52 for some reason. Instead, we can set pins 15/16 as another set of I2C pins,
+* and thus have a separate line of communication for each IMU 
+*
+* To use the code, keep the address of BOTH IMU as 0x68 (do not pull ADO pin high),
+* then connect one IMU to pin 15 (SDA) and pin 16 (SCL). That should do the trick.
+*/
+
 #include <Arduino.h>
 #include <Wire.h>
 #include <math.h>
+#include <bluefruit.h>
+#include <vector>
+
+#define SDA0 PIN_WIRE_SDA
+#define SCL0 PIN_WIRE_SCL
+
+#define SDA1 15
+#define SCL1 16
+
+#define I2C_SPEED_STANDARD 100000
+
+TwoWire i2cWire1 = TwoWire(NRF_TWIM0, NRF_TWIS0, SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0_IRQn, SDA0, SCL0);
+TwoWire i2cWire2 = TwoWire(NRF_TWIM1, NRF_TWIS1, SPIM1_SPIS1_TWIM1_TWIS1_SPI1_TWI1_IRQn, SDA1, SCL1);
+
+std::vector<TwoWire> wires = {i2cWire1, i2cWire2};
 
 // only print every DELAY_PRINT number of cycles
 #define    DELAY_PRINT                300 
@@ -9,7 +34,7 @@
 #define    NUM_IMU                    2
 
 #define    MPU9250_ADDRESS            0x68
-#define    MPU9250_ADDRESS_2          0x69    // for IMU #2. Connect ADO pin to 3.3V
+#define    MPU9250_ADDRESS_2          0x69    // Connect ADO pin to 3.3V
 
 #define    MAG_ADDRESS                0x0C
 
@@ -98,29 +123,31 @@ static long int tLast = 0;
 
 // This function read Nbytes bytes from I2C device at address Address. 
 // Put read bytes starting at register Register in the Data array. 
-void I2Cread(uint8_t Address, uint8_t Register, uint8_t Nbytes, uint8_t* Data)
+void I2Cread(uint8_t Address, uint8_t Register, uint8_t Nbytes, uint8_t* Data, uint8_t wireNum)
 {
   // Set register address
-  Wire.beginTransmission(Address);
-  Wire.write(Register);
-  Wire.endTransmission();
+  wires[wireNum].beginTransmission(Address);
+  wires[wireNum].write(Register);
+  wires[wireNum].endTransmission();
   
   // Read Nbytes
-  Wire.requestFrom(Address, Nbytes); 
+  wires[wireNum].requestFrom(Address, Nbytes); 
   uint8_t index=0;
-  while (Wire.available())
-    Data[index++]=Wire.read();
+  while (wires[wireNum].available())
+    Data[index++]=wires[wireNum].read();
 }
 
 
 // Write a byte (Data) in device (Address) at register (Register)
-void I2CwriteByte(uint8_t Address, uint8_t Register, uint8_t Data)
+void I2CwriteByte(uint8_t Address, uint8_t Register, uint8_t Data, uint8_t wireNum)
 {
   // Set register address
-  Wire.beginTransmission(Address);
-  Wire.write(Register);
-  Wire.write(Data);
-  Wire.endTransmission();
+
+  wires[wireNum].beginTransmission(Address);
+  wires[wireNum].write(Register);
+  wires[wireNum].write(Data);
+
+  wires[wireNum].endTransmission();
 }
 
 // Initial time
@@ -129,30 +156,37 @@ volatile bool intFlag=false;
 
 void setup() {
   // Arduino initializations
-    Wire.begin();
     Serial.begin(9600);
+    Serial.println("Hello World");
+
+    i2cWire1.begin();
+    i2cWire1.setClock(I2C_SPEED_STANDARD);
+
+    i2cWire2.begin();
+    i2cWire2.setClock(I2C_SPEED_STANDARD);
 
     // Set accelerometers low pass filter at 5Hz
-    I2CwriteByte(MPU9250_ADDRESS,29,0x06);
+    I2CwriteByte(MPU9250_ADDRESS,29,0x06, 0);
+
     // Set gyroscope low pass filter at 5Hz
-    I2CwriteByte(MPU9250_ADDRESS,26,0x06);
+    I2CwriteByte(MPU9250_ADDRESS,26,0x06, 0);
     // Configure gyroscope range
-    I2CwriteByte(MPU9250_ADDRESS,27,GYRO_RANGE_INIT);
+    I2CwriteByte(MPU9250_ADDRESS,27,GYRO_RANGE_INIT, 0);
     // Configure accelerometers range
-    I2CwriteByte(MPU9250_ADDRESS,28,ACC_RANGE_INIT);
+    I2CwriteByte(MPU9250_ADDRESS,28,ACC_RANGE_INIT, 0);
     // Set by pass mode for the magnetometers
-    I2CwriteByte(MPU9250_ADDRESS,0x37,0x02);
+    I2CwriteByte(MPU9250_ADDRESS,0x37,0x02, 0);
 
     if (NUM_IMU == 2) {
-      I2CwriteByte(MPU9250_ADDRESS_2,29,0x06);
-      I2CwriteByte(MPU9250_ADDRESS_2,26,0x06);
-      I2CwriteByte(MPU9250_ADDRESS_2,27,GYRO_RANGE_INIT);
-      I2CwriteByte(MPU9250_ADDRESS_2,28,ACC_RANGE_INIT);
-      I2CwriteByte(MPU9250_ADDRESS_2,0x37,0x02);
+      I2CwriteByte(MPU9250_ADDRESS,29,0x06,1);
+      I2CwriteByte(MPU9250_ADDRESS,26,0x06,1);
+      I2CwriteByte(MPU9250_ADDRESS,27,GYRO_RANGE_INIT,1);
+      I2CwriteByte(MPU9250_ADDRESS,28,ACC_RANGE_INIT,1);
+      I2CwriteByte(MPU9250_ADDRESS,0x37,0x02,1);
     }
 
     // Request continuous magnetometer measurements in 16 bits
-    I2CwriteByte(MAG_ADDRESS,0x0A,0x16);
+    //I2CwriteByte(MAG_ADDRESS,0x0A,0x16);
 
     // Store initial time
     ti = millis();
@@ -161,15 +195,17 @@ void setup() {
 
     Serial.println("MPU9250");
     delay(1000);
+
+  
 }
 
-static void populateData(MPU9250 &imu, uint8_t Address, double dt) {
+static void populateData(MPU9250 &imu, uint8_t Address, double dt, uint8_t wireNum) {
   // ____________________________________
   // :::  accelerometer and gyroscope :::
 
   // Read accelerometer and gyroscope
   uint8_t Buf[14];
-  I2Cread(Address,0x3B,14,Buf);
+  I2Cread(Address,0x3B,14,Buf,wireNum);
 
   // Create 16 bits values from 8 bits data
 
@@ -282,29 +318,22 @@ static bool printKneeAngle() {
   return false;
 }
 
-static void printKneeX() {
-  double knee_x = imu2.th_x - imu1.th_x;
-  Serial.println(knee_x);
-}
-
 void loop() {
+
     long int tCurr = millis();
     double dt = 1.0 * (tCurr - tLast) / 1000;   // seconds
     tLast = tCurr;
 
-    populateData(imu1, MPU9250_ADDRESS, dt);
+    populateData(imu1, MPU9250_ADDRESS, dt, 0);
     if (NUM_IMU == 2) {
-      populateData(imu2, MPU9250_ADDRESS_2, dt);
+      populateData(imu2, MPU9250_ADDRESS, dt, 1);
 
       // print knee angle
-      printKneeX();
-      /*
       if (printKneeAngle()) {
         printCounter = 0;
       } else {
         printCounter++;
       }
-      */
     } else if (NUM_IMU == 1) {
       // print angle for single IMU
       if (printData(imu1)) {
@@ -313,67 +342,4 @@ void loop() {
         printCounter++;
       }
     }
-
-    /*
-    // Accelerometer
-    Serial.print("ax: ");
-    Serial.print (ax,DEC);
-    Serial.print ("\t");
-
-    Serial.print("ay: ");
-    Serial.print (ay,DEC);
-    Serial.print ("\t");
-
-    Serial.print("az: ");
-    Serial.print (az,DEC);
-    Serial.print ("\t");
-
-    // Gyroscope
-    Serial.print("gx: ");
-    Serial.print (gx,DEC);
-    Serial.print ("\t");
-
-    Serial.print("gy: ");
-    Serial.print (gy,DEC);
-    Serial.print ("\t");
-
-    Serial.print("gz: ");
-    Serial.print (gz,DEC);
-    Serial.print ("\t");
-        // _____________________
-    // :::  Magnetometer :::
-
-    // Read register Status 1 and wait for the DRDY: Data Ready
-    uint8_t ST1;
-    do
-    {
-        I2Cread(MAG_ADDRESS,0x02,1,&ST1);
-    }
-    while (!(ST1&0x01));
-
-    // Read magnetometer data
-    uint8_t Mag[7];
-    I2Cread(MAG_ADDRESS,0x03,7,Mag);
-
-    // Create 16 bits values from 8 bits data
-
-    // Magnetometer
-    int16_t mx = -(Mag[3]<<8 | Mag[2]);
-    int16_t my = -(Mag[1]<<8 | Mag[0]);
-    int16_t mz = -(Mag[5]<<8 | Mag[4]);
-
-    // Magnetometer
-    Serial.print(mx+200,DEC);
-    Serial.print("\t");
-
-    Serial.print(my-70,DEC);
-    Serial.print("\t");
-
-    Serial.print(mz-700,DEC);
-    Serial.print("\t");
-
-    // End of line
-    Serial.println("");
-
-    */
 }
